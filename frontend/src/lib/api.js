@@ -28,27 +28,33 @@ api.interceptors.response.use(
   }
 );
 
-// Auth
+// --- Auth ---
 export const login = (email, password) =>
   api.post('/auth/login', { email, password });
 
 export const getMe = () => api.get('/auth/me');
 
-// Student
+// --- Student ---
 export const getStudentDashboard = () => api.get('/student/dashboard');
 export const getAttendanceHistory = (params) =>
   api.get('/student/attendance/history', { params });
 
-// Teacher
+// --- Teacher ---
 export const getTeacherDashboard = () => api.get('/teacher/dashboard');
 export const getTeacherSubject = (subjectId) =>
   api.get(`/teacher/subject/${subjectId}`);
 export const downloadSubjectCSV = (subjectId) =>
   `${API_URL}/teacher/subject/${subjectId}/download-csv`;
 
-// QR
-export const generateQR = (subjectId, duration = 15) =>
-  api.post('/qr/generate', { subjectId, duration });
+// --- QR (UPDATED) ---
+// Now accepts latitude and longitude to set the classroom reference point
+export const generateQR = (subjectId, duration = 15, latitude, longitude) =>
+  api.post('/qr/generate', { 
+    subjectId, 
+    duration, 
+    latitude,  // Added
+    longitude  // Added
+  });
 
 export const validateSession = (sessionId) =>
   api.get(`/qr/session/${sessionId}`);
@@ -59,7 +65,7 @@ export const getActiveSession = (subjectId) =>
 export const invalidateSession = (sessionId) =>
   api.delete(`/qr/invalidate/${sessionId}`);
 
-// Attendance
+// --- Attendance ---
 export const markAttendance = (data) =>
   api.post('/attendance/mark', data);
 
