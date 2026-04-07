@@ -8,56 +8,15 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Attach token to every request
 api.interceptors.request.use((config) => {
   const token = Cookies.get('token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// Handle 401 globally
-api.interceptors.response.use(
-  (res) => res,
-  (err) => {
-    if (err.response?.status === 401 && typeof window !== 'undefined') {
-      Cookies.remove('token');
-      Cookies.remove('user');
-      window.location.href = '/login';
-    }
-    return Promise.reject(err);
-  }
-);
-
-// --- Auth ---
-export const login = (email, password) =>
-  api.post('/auth/login', { email, password });
-
-export const getMe = () => api.get('/auth/me');
-
-// --- Student ---
-export const getStudentDashboard = () => api.get('/student/dashboard');
-export const getAttendanceHistory = (params) =>
-  api.get('/student/attendance/history', { params });
-
-// --- Teacher ---
-export const getTeacherDashboard = () => api.get('/teacher/dashboard');
-export const getTeacherSubject = (subjectId) =>
-  api.get(`/teacher/subject/${subjectId}`);
-export const downloadSubjectCSV = (subjectId) =>
-  `${API_URL}/teacher/subject/${subjectId}/download-csv`;
-
-// --- QR (UPDATED) ---
-// Now accepts latitude and longitude to set the classroom reference point
+// QR Endpoints
 export const generateQR = (subjectId, duration = 15, latitude, longitude) =>
-  api.post('/qr/generate', { 
-    subjectId, 
-    duration, 
-    latitude,  // Added
-    longitude  // Added
-  });
-
-export const validateSession = (sessionId) =>
-  api.get(`/qr/session/${sessionId}`);
+  api.post('/qr/generate', { subjectId, duration, latitude, longitude });
 
 export const getActiveSession = (subjectId) =>
   api.get(`/qr/active/${subjectId}`);
@@ -65,10 +24,7 @@ export const getActiveSession = (subjectId) =>
 export const invalidateSession = (sessionId) =>
   api.delete(`/qr/invalidate/${sessionId}`);
 
-// --- Attendance ---
-export const markAttendance = (data) =>
-  api.post('/attendance/mark', data);
-
+// Attendance Endpoints
 export const getSessionStudents = (sessionId) =>
   api.get(`/attendance/session/${sessionId}/students`);
 
