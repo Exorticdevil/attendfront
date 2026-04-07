@@ -8,23 +8,72 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+// Attach token to every request automatically
 api.interceptors.request.use((config) => {
   const token = Cookies.get('token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// QR Endpoints
+// Handle 401 (Unauthorized) errors globally
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err.response?.status === 401 && typeof window !== 'undefined') {
+      Cookies.remove('token');
+      Cookies.remove('user');
+      window.location.href = '/login';
+    }
+    return Promise.reject(err);
+  }
+);
+
+// --- AUTHENTICATION ---
+export const login = (email, password) =>
+  api.post('/auth/login', { email, password });
+
+export const getMe = () => 
+  api.get('/auth/me');
+
+// --- STUDENT DASHBOARD & HISTORY ---
+export const getStudentDashboard = () => 
+  api.get('/student/dashboard');
+
+export const getAttendanceHistory = (params) =>
+  api.get('/student/attendance/history', { params });
+
+// --- TEACHER DASHBOARD & SUBJECTS ---
+export const getTeacherDashboard = () => 
+  api.get('/teacher/dashboard');
+
+export const getTeacherSubject = (subjectId) =>
+  api.get(`/teacher/subject/${subjectId}`);
+
+export const downloadSubjectCSV = (subjectId) =>
+  `${API_URL}/teacher/subject/${subjectId}/download-csv`;
+
+// --- QR SESSION MANAGEMENT ---
 export const generateQR = (subjectId, duration = 15, latitude, longitude) =>
-  api.post('/qr/generate', { subjectId, duration, latitude, longitude });
+  api.post('/qr/generate', { 
+    subjectId, 
+    duration, 
+    latitude, 
+    longitude 
+  });
 
 export const getActiveSession = (subjectId) =>
   api.get(`/qr/active/${subjectId}`);
 
+export const validateSession = (sessionId) =>
+  api.get(`/qr/session/${sessionId}`);
+
 export const invalidateSession = (sessionId) =>
   api.delete(`/qr/invalidate/${sessionId}`);
 
-// Attendance Endpoints
+// --- ATTENDANCE MARKING ---
+export const markAttendance = (data) =>
+  api.post('/attendance/mark', data);
+
 export const getSessionStudents = (sessionId) =>
   api.get(`/attendance/session/${sessionId}/students`);
 
