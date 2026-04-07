@@ -6,105 +6,98 @@ import { useAuth } from '../../context/AuthContext';
 export default function QRScannerPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
-  const scannerRef = useRef(null);
   const html5QrRef = useRef(null);
   const [status, setStatus] = useState('idle'); // idle | starting | scanning | error | success
   const [errorMsg, setErrorMsg] = useState('');
   const [cameras, setCameras] = useState([]);
   const [selectedCamera, setSelectedCamera] = useState(null);
-  const [torchOn, setTorchOn] = useState(false);
   const [scanned, setScanned] = useState(false);
 
+  // Auth Protection
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
     if (!authLoading && user?.role !== 'student') router.push('/teacher/dashboard');
   }, [user, authLoading]);
 
-  // Dynamically import html5-qrcode (client-only)
+  // Cleanup on unmount
   useEffect(() => {
-    if (!user || user.role !== 'student') return;
-    return () => { stopScanner(); };
-  }, [user]);
+    return () => {
+      if (html5QrRef.current) {
+        html5QrRef.current.stop().catch(() => {});
+      }
+    };
+  }, []);
+
+  const stopScanner = async () => {
+    if (html5QrRef.current) {
+      try {
+        await html5QrRef.current.stop();
+        html5QrRef.current = null;
+      } catch (e) {
+        console.error("Stop error", e);
+      }
+    }
+  };
 
   const startScanner = async (cameraId) => {
     setStatus('starting');
     setErrorMsg('');
 
-    try {
-      const { Html5Qrcode } = await import('html5-qrcode');
+    // Small timeout to ensure the DOM element #qr-reader is rendered
+    setTimeout(async () => {
+      try {
+        const { Html5Qrcode } = await import('html5-qrcode');
 
-      // Stop existing scanner if any
-      if (html5QrRef.current) {
-        try { await html5QrRef.current.stop(); } catch {}
-        html5QrRef.current = null;
-      }
-
-      const qrScanner = new Html5Qrcode('qr-reader');
-      html5QrRef.current = qrScanner;
-
-      const config = {
-        fps: 10,
-        qrbox: { width: 250, height: 250 },
-        aspectRatio: 1.0,
-        showTorchButtonIfSupported: true,
-        videoConstraints: {
-          deviceId: cameraId ? { exact: cameraId } : undefined,
-          facingMode: cameraId ? undefined : { ideal: 'environment' }
+        if (html5QrRef.current) {
+          await stopScanner();
         }
-      };
 
-      await qrScanner.start(
-        cameraId || { facingMode: 'environment' },
-        config,
-        (decodedText) => {
-          if (scanned) return;
-          handleScanSuccess(decodedText, qrScanner);
-        },
-        () => {} // ignore per-frame errors
-      );
+        const qrScanner = new Html5Qrcode('qr-reader');
+        html5QrRef.current = qrScanner;
 
-      setStatus('scanning');
-    } catch (err) {
-      console.error('Scanner error:', err);
-      setStatus('error');
-      if (err.message?.includes('permission') || err.name === 'NotAllowedError') {
-        setErrorMsg('Camera access denied. Please allow camera permission in your browser settings and try again.');
-      } else if (err.message?.includes('NotFound') || err.name === 'NotFoundError') {
-        setErrorMsg('No camera found on your device.');
-      } else {
-        setErrorMsg('Could not start camera. ' + (err.message || 'Please try again.'));
+        const config = {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0,
+        };
+
+        // Use 'user' for PC/Laptops if 'environment' fails
+        const cameraConfig = cameraId ? cameraId : { facingMode: 'environment' };
+
+        await qrScanner.start(
+          cameraConfig,
+          config,
+          (decodedText) => {
+            if (scanned) return;
+            handleScanSuccess(decodedText, qrScanner);
+          },
+          () => {} // silent frame errors
+        );
+
+        setStatus('scanning');
+      } catch (err) {
+        console.error('Scanner error:', err);
+        setStatus('error');
+        if (err.message?.includes('permission') || err.name === 'NotAllowedError') {
+          setErrorMsg('Camera access denied. Please allow camera permission in browser settings.');
+        } else {
+          setErrorMsg('Could not start camera. Please ensure no other app is using it.');
+        }
       }
-    }
-  };
-
-  const stopScanner = async () => {
-    if (html5QrRef.current) {
-      try { await html5QrRef.current.stop(); } catch {}
-      html5QrRef.current = null;
-    }
+    }, 300);
   };
 
   const handleScanSuccess = async (decodedText, scanner) => {
-    if (scanned) return;
     setScanned(true);
-
-    // Stop scanner
     try { await scanner.stop(); } catch {}
     html5QrRef.current = null;
-
     setStatus('success');
 
-    // Parse the scanned URL/text
-    // Expected: http://localhost:3000/scan?session=<sessionId>
-    // or just a sessionId directly
     let sessionId = null;
-
     try {
-      // Try parsing as URL first
       const url = new URL(decodedText);
       sessionId = url.searchParams.get('session');
     } catch {
-      // Not a URL — maybe it's a raw sessionId
       if (decodedText.length > 10) sessionId = decodedText.trim();
     }
 
@@ -115,52 +108,33 @@ export default function QRScannerPage() {
       return;
     }
 
-    // Small haptic feedback on mobile
     if (navigator.vibrate) navigator.vibrate(100);
 
-    // Navigate to attendance marking page
     setTimeout(() => {
       router.push(`/scan?session=${encodeURIComponent(sessionId)}`);
     }, 800);
   };
 
-  const getCameras = async () => {
+  const handleStartClick = async () => {
     try {
       const { Html5Qrcode } = await import('html5-qrcode');
       const devices = await Html5Qrcode.getCameras();
       setCameras(devices);
-      return devices;
-    } catch {
-      return [];
+      
+      if (devices.length > 0) {
+        const backCam = devices.find(d => /back|rear|environment/i.test(d.label));
+        const camId = backCam?.id || devices[0]?.id;
+        setSelectedCamera(camId);
+        startScanner(camId);
+      } else {
+        startScanner(null);
+      }
+    } catch (e) {
+      startScanner(null);
     }
   };
 
-  const handleStartClick = async () => {
-    const devices = await getCameras();
-    if (devices.length > 1) {
-      setCameras(devices);
-      // Auto-pick back camera
-      const backCam = devices.find(d =>
-        d.label?.toLowerCase().includes('back') ||
-        d.label?.toLowerCase().includes('rear') ||
-        d.label?.toLowerCase().includes('environment')
-      );
-      const camId = backCam?.id || devices[devices.length - 1]?.id;
-      setSelectedCamera(camId);
-      startScanner(camId);
-    } else {
-      startScanner(null); // Let browser pick best camera
-    }
-  };
-
-  const handleSwitchCamera = async (cameraId) => {
-    setSelectedCamera(cameraId);
-    setScanned(false);
-    await stopScanner();
-    startScanner(cameraId);
-  };
-
-  const handleRetry = async () => {
+  const handleRetry = () => {
     setScanned(false);
     setStatus('idle');
     setErrorMsg('');
@@ -169,411 +143,85 @@ export default function QRScannerPage() {
   if (authLoading) return <FullPageLoader />;
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'var(--bg-primary)',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'flex-start',
-      padding: '24px 16px'
-    }}>
+    <div style={{ minHeight: '100vh', background: '#0f172a', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 16px' }}>
+      
       {/* Header */}
-      <div style={{ width: '100%', maxWidth: 440, marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-          <button
-            onClick={() => { stopScanner(); router.push('/student/dashboard'); }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: 'var(--text-secondary)', fontSize: 14, fontFamily: 'var(--font-body)'
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
-              <path fillRule="evenodd" d="M15 8a.5.5 0 00-.5-.5H2.707l3.147-3.146a.5.5 0 10-.708-.708l-4 4a.5.5 0 000 .708l4 4a.5.5 0 00.708-.708L2.707 8.5H14.5A.5.5 0 0015 8z"/>
-            </svg>
-            Dashboard
-          </button>
-
-          {/* Logo */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{
-              width: 30, height: 30, borderRadius: 9,
-              background: 'linear-gradient(135deg, #7c3aed, #5b21b6)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>
-              <svg width="16" height="16" viewBox="0 0 32 32" fill="none">
-                <rect x="4" y="4" width="10" height="10" rx="2" fill="white" opacity="0.9"/>
-                <rect x="18" y="4" width="10" height="10" rx="2" fill="white" opacity="0.6"/>
-                <rect x="4" y="18" width="10" height="10" rx="2" fill="white" opacity="0.6"/>
-                <rect x="20" y="20" width="6" height="6" rx="1" fill="white" opacity="0.9"/>
-              </svg>
-            </div>
-            <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17 }}>
-              <span className="gradient-text">AttendX</span>
-            </span>
-          </div>
-
-          {/* Camera switch (if multiple cameras) */}
-          {status === 'scanning' && cameras.length > 1 && (
-            <button
-              onClick={() => {
-                const current = cameras.findIndex(c => c.id === selectedCamera);
-                const next = cameras[(current + 1) % cameras.length];
-                handleSwitchCamera(next.id);
-              }}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                width: 36, height: 36, borderRadius: 10, cursor: 'pointer',
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid var(--border)',
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" color="var(--text-secondary)">
-                <path d="M11 19H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/>
-                <path d="M13 5h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-5"/>
-                <circle cx="12" cy="12" r="3"/>
-                <path d="m18 22-3-3 3-3"/>
-                <path d="m6 2 3 3-3 3"/>
-              </svg>
-            </button>
-          )}
-
-          {status !== 'scanning' && <div style={{ width: 36 }} />}
-        </div>
-
-        <div style={{ textAlign: 'center' }}>
-          <h1 style={{
-            fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 800,
-            letterSpacing: '-0.02em', marginBottom: 6
-          }}>Scan QR Code</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>
-            Point your camera at your teacher's QR code
-          </p>
-        </div>
+      <div style={{ width: '100%', maxWidth: 440, marginBottom: 28, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+         <button onClick={() => { stopScanner(); router.push('/student/dashboard'); }} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
+           ← Dashboard
+         </button>
+         <div style={{ fontWeight: 800, fontSize: 18, color: '#7c3aed' }}>AttendX</div>
+         <div style={{ width: 40 }} /> 
       </div>
 
-      {/* Main scanner area */}
-      <div style={{ width: '100%', maxWidth: 440 }}>
+      <div style={{ textAlign: 'center', marginBottom: 30 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Scan QR Code</h1>
+        <p style={{ color: '#94a3b8', fontSize: 14 }}>Point camera at the teacher's screen</p>
+      </div>
 
-        {/* IDLE state */}
+      {/* Main Container */}
+      <div style={{ width: '100%', maxWidth: 440, position: 'relative' }}>
+        
+        {/* THE FIX: DIV is always present but hidden/shown based on state */}
+        <div 
+          id="qr-reader" 
+          style={{ 
+            display: status === 'scanning' ? 'block' : 'none',
+            width: '100%',
+            borderRadius: '20px',
+            overflow: 'hidden',
+            border: '2px solid #7c3aed',
+            boxShadow: '0 0 20px rgba(124, 58, 237, 0.3)'
+          }} 
+        />
+
         {status === 'idle' && (
-          <div className="glass-card animate-scale-in" style={{ padding: 32, textAlign: 'center' }}>
-            {/* Animated QR icon */}
-            <div style={{
-              width: 120, height: 120, margin: '0 auto 24px',
-              position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>
-              <div style={{
-                position: 'absolute', inset: 0, borderRadius: '50%',
-                background: 'radial-gradient(circle, rgba(124,58,237,0.15) 0%, transparent 70%)',
-                animation: 'pulse-ring 2s ease-in-out infinite'
-              }} />
-              <div style={{
-                width: 80, height: 80, borderRadius: 20,
-                background: 'rgba(124,58,237,0.1)',
-                border: '1px solid rgba(124,58,237,0.3)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center'
-              }}>
-                <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
-                  {/* QR corner brackets */}
-                  <path d="M8 4H4v4" stroke="#7c3aed" strokeWidth="3" strokeLinecap="round"/>
-                  <path d="M36 4h4v4" stroke="#7c3aed" strokeWidth="3" strokeLinecap="round"/>
-                  <path d="M8 40H4v-4" stroke="#7c3aed" strokeWidth="3" strokeLinecap="round"/>
-                  <path d="M36 40h4v-4" stroke="#7c3aed" strokeWidth="3" strokeLinecap="round"/>
-                  {/* Mini QR pattern */}
-                  <rect x="12" y="12" width="8" height="8" rx="1.5" fill="#a78bfa" opacity="0.7"/>
-                  <rect x="24" y="12" width="8" height="8" rx="1.5" fill="#a78bfa" opacity="0.5"/>
-                  <rect x="12" y="24" width="8" height="8" rx="1.5" fill="#a78bfa" opacity="0.5"/>
-                  <rect x="26" y="26" width="4" height="4" rx="1" fill="#a78bfa" opacity="0.9"/>
-                  <rect x="24" y="24" width="2" height="2" rx="0.5" fill="#a78bfa" opacity="0.3"/>
-                </svg>
-              </div>
-            </div>
-
-            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 700, marginBottom: 10 }}>
-              Ready to Scan
-            </h2>
-            <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 28, lineHeight: 1.6 }}>
-              Your teacher will display a QR code on the board.<br />
-              Tap below to open your camera and scan it.
-            </p>
-
-            {/* Steps */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28, textAlign: 'left' }}>
-              {[
-                { n: '1', text: 'Ask your teacher to show the QR code' },
-                { n: '2', text: 'Tap "Open Camera" below' },
-                { n: '3', text: 'Point at the QR code — it scans instantly' },
-                { n: '4', text: 'Allow location access to confirm you\'re in class' },
-              ].map(step => (
-                <div key={step.n} style={{
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '10px 14px',
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 10
-                }}>
-                  <div style={{
-                    width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
-                    background: 'rgba(139,92,246,0.2)',
-                    border: '1px solid rgba(139,92,246,0.3)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 12, fontWeight: 700, color: '#a78bfa'
-                  }}>{step.n}</div>
-                  <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{step.text}</p>
-                </div>
-              ))}
-            </div>
-
-            <button
-              className="btn-primary"
-              onClick={handleStartClick}
-              style={{ width: '100%', padding: '14px 24px', fontSize: 16 }}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-                <circle cx="12" cy="13" r="4"/>
-              </svg>
+          <div style={{ padding: 40, background: '#1e293b', borderRadius: 20, textAlign: 'center' }}>
+            <div style={{ fontSize: 50, marginBottom: 20 }}>📸</div>
+            <button className="btn-primary" onClick={handleStartClick} style={{ width: '100%', background: '#7c3aed', color: 'white', padding: '14px', borderRadius: '12px', border: 'none', fontWeight: 700, cursor: 'pointer' }}>
               Open Camera
             </button>
           </div>
         )}
 
-        {/* STARTING state */}
         {status === 'starting' && (
-          <div className="glass-card animate-scale-in" style={{ padding: 40, textAlign: 'center' }}>
-            <div style={{
-              width: 64, height: 64, border: '3px solid rgba(139,92,246,0.3)',
-              borderTopColor: '#7c3aed', borderRadius: '50%',
-              animation: 'spin 0.8s linear infinite', margin: '0 auto 20px'
-            }} />
-            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
-              Starting Camera...
-            </h2>
-            <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>
-              Please allow camera access when prompted
-            </p>
+          <div style={{ textAlign: 'center', padding: 40 }}>
+            <div className="spinner" />
+            <p>Initializing camera...</p>
           </div>
         )}
 
-        {/* SCANNING state — camera viewfinder */}
-        {status === 'scanning' && (
-          <div className="animate-scale-in">
-            <div style={{
-              position: 'relative', borderRadius: 20, overflow: 'hidden',
-              border: '1px solid rgba(139,92,246,0.3)',
-              boxShadow: '0 0 40px rgba(139,92,246,0.2)',
-              marginBottom: 20
-            }}>
-              {/* html5-qrcode mounts here */}
-              <div
-                id="qr-reader"
-                ref={scannerRef}
-                style={{ width: '100%' }}
-              />
-
-              {/* Scanning overlay with animated corners */}
-              <div style={{
-                position: 'absolute', inset: 0, pointerEvents: 'none',
-                display: 'flex', alignItems: 'center', justifyContent: 'center'
-              }}>
-                {/* Corner brackets */}
-                {[
-                  { top: '20%', left: '20%', borderTop: '3px solid #7c3aed', borderLeft: '3px solid #7c3aed', borderRadius: '4px 0 0 0' },
-                  { top: '20%', right: '20%', borderTop: '3px solid #7c3aed', borderRight: '3px solid #7c3aed', borderRadius: '0 4px 0 0' },
-                  { bottom: '20%', left: '20%', borderBottom: '3px solid #7c3aed', borderLeft: '3px solid #7c3aed', borderRadius: '0 0 0 4px' },
-                  { bottom: '20%', right: '20%', borderBottom: '3px solid #7c3aed', borderRight: '3px solid #7c3aed', borderRadius: '0 0 4px 0' },
-                ].map((style, i) => (
-                  <div key={i} style={{
-                    position: 'absolute', width: 28, height: 28, ...style,
-                  }} />
-                ))}
-
-                {/* Scanning line animation */}
-                <div style={{
-                  position: 'absolute', left: '20%', right: '20%', height: 2,
-                  background: 'linear-gradient(90deg, transparent, #7c3aed, transparent)',
-                  animation: 'scan-line 2s ease-in-out infinite',
-                  top: '50%'
-                }} />
-              </div>
-            </div>
-
-            {/* Instruction */}
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              padding: '12px 20px',
-              background: 'rgba(139,92,246,0.08)',
-              border: '1px solid rgba(139,92,246,0.2)',
-              borderRadius: 12, marginBottom: 16
-            }}>
-              <div style={{
-                width: 8, height: 8, borderRadius: '50%', background: '#7c3aed',
-                animation: 'blink 1s ease-in-out infinite'
-              }} />
-              <p style={{ color: '#c4b5fd', fontSize: 14, fontWeight: 500 }}>
-                Align QR code within the frame
-              </p>
-            </div>
-
-            <button
-              onClick={() => { stopScanner(); setStatus('idle'); }}
-              className="btn-ghost"
-              style={{ width: '100%' }}
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-
-        {/* SUCCESS state */}
-        {status === 'success' && (
-          <div className="glass-card animate-scale-in" style={{ padding: 40, textAlign: 'center' }}>
-            <div style={{
-              width: 88, height: 88, borderRadius: '50%',
-              background: 'rgba(16,185,129,0.15)',
-              border: '2px solid rgba(16,185,129,0.4)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 20px',
-              animation: 'success-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)'
-            }}>
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-            </div>
-            <h2 style={{
-              fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 800,
-              color: '#10b981', marginBottom: 8
-            }}>QR Code Scanned!</h2>
-            <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>
-              Verifying your location and marking attendance...
-            </p>
-            <div style={{
-              marginTop: 20, display: 'flex', justifyContent: 'center', gap: 6
-            }}>
-              {[0, 1, 2].map(i => (
-                <div key={i} style={{
-                  width: 8, height: 8, borderRadius: '50%', background: '#10b981',
-                  animation: `bounce 0.6s ease-in-out ${i * 0.1}s infinite alternate`
-                }} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ERROR state */}
         {status === 'error' && (
-          <div className="glass-card animate-scale-in" style={{ padding: 32, textAlign: 'center' }}>
-            <div style={{
-              width: 80, height: 80, borderRadius: '50%',
-              background: 'rgba(244,63,94,0.1)',
-              border: '2px solid rgba(244,63,94,0.3)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 20px', fontSize: 36
-            }}>⚠️</div>
-            <h2 style={{
-              fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 700,
-              color: '#f43f5e', marginBottom: 10
-            }}>Scanner Error</h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 24, lineHeight: 1.6 }}>
-              {errorMsg}
-            </p>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button
-                className="btn-ghost"
-                onClick={() => router.push('/student/dashboard')}
-                style={{ flex: 1 }}
-              >
-                ← Dashboard
-              </button>
-              <button
-                className="btn-primary"
-                onClick={handleRetry}
-                style={{ flex: 1 }}
-              >
-                Try Again
-              </button>
-            </div>
+          <div style={{ padding: 30, background: '#451a1a', borderRadius: 20, textAlign: 'center', border: '1px solid #f43f5e' }}>
+            <p style={{ color: '#f43f5e', marginBottom: 20 }}>{errorMsg}</p>
+            <button onClick={handleRetry} style={{ background: '#f43f5e', color: 'white', padding: '10px 20px', borderRadius: '8px', border: 'none' }}>Try Again</button>
+          </div>
+        )}
+
+        {status === 'success' && (
+          <div style={{ textAlign: 'center', padding: 40 }}>
+            <div style={{ fontSize: 50 }}>✅</div>
+            <p style={{ color: '#10b981', fontWeight: 700 }}>Attendance Marked!</p>
           </div>
         )}
       </div>
 
-      {/* Bottom hint */}
-      {status === 'scanning' && (
-        <p style={{
-          marginTop: 20, fontSize: 12, color: 'var(--text-muted)',
-          textAlign: 'center'
-        }}>
-          Make sure the QR code is well-lit and within frame
-        </p>
-      )}
-
-      <style>{`
+      <style jsx>{`
+        .spinner {
+          width: 40px; height: 40px;
+          border: 4px solid rgba(124, 58, 237, 0.2);
+          border-top: 4px solid #7c3aed;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+          margin: 0 auto 20px;
+        }
         @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes pulse-ring {
-          0%, 100% { transform: scale(1); opacity: 0.6; }
-          50% { transform: scale(1.15); opacity: 0.2; }
-        }
-        @keyframes scan-line {
-          0% { top: 22%; }
-          50% { top: 78%; }
-          100% { top: 22%; }
-        }
-        @keyframes blink {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.3; }
-        }
-        @keyframes success-pop {
-          0% { transform: scale(0.5); opacity: 0; }
-          100% { transform: scale(1); opacity: 1; }
-        }
-        @keyframes bounce {
-          from { transform: translateY(0); }
-          to { transform: translateY(-6px); }
-        }
-
-        /* Override html5-qrcode default styles */
-        #qr-reader {
-          border: none !important;
-          padding: 0 !important;
-          background: #000 !important;
-        }
-        #qr-reader video {
-          border-radius: 0 !important;
-          width: 100% !important;
-          max-height: 380px !important;
-          object-fit: cover !important;
-        }
-        #qr-reader__scan_region {
-          background: transparent !important;
-        }
-        #qr-reader__dashboard {
-          display: none !important;
-        }
-        #qr-reader img {
-          display: none !important;
-        }
-        #qr-reader select {
-          display: none !important;
-        }
-        #qr-reader__header_message {
-          display: none !important;
-        }
+        #qr-reader video { object-fit: cover !important; }
       `}</style>
     </div>
   );
 }
 
 function FullPageLoader() {
-  return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{
-        width: 48, height: 48, border: '3px solid rgba(139,92,246,0.3)',
-        borderTopColor: '#7c3aed', borderRadius: '50%',
-        animation: 'spin 0.8s linear infinite'
-      }} />
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
-  );
+  return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: 'white' }}>Loading...</div>;
 }
