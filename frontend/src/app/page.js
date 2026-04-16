@@ -2,7 +2,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
-import mixpanel from '../lib/mixpanel';
+import mixpanel from '../../lib/mixpanel';
 
 export default function Home() {
   const { user, loading } = useAuth();
