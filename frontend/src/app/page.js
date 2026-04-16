@@ -9,6 +9,7 @@ export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
+    mixpanel.track('session_started', { source: 'home_page' });
     if (!loading) {
       if (!user) router.push('/login');
       else if (user.role === 'teacher') router.push('/teacher/dashboard');
