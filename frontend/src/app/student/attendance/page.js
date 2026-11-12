@@ -36,11 +36,11 @@ export default function StudentAttendancePage() {
     : history.filter(r => r.subject?._id === selectedSubject);
 
   if (authLoading || loading) return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <div style={{ width: 240, background: 'rgba(10,10,20,0.8)', borderRight: '1px solid var(--border)' }} />
-      <main style={{ flex: 1, padding: 32 }}>
-        <div className="skeleton" style={{ height: 40, width: 300, marginBottom: 32 }} />
-        <div className="skeleton" style={{ height: 500 }} />
+    <div className="app-shell">
+      <Sidebar />
+      <main className="app-main">
+        <div className="skeleton" style={{ height: 36, width: 220, marginBottom: 24 }} />
+        <div className="skeleton" style={{ height: 400 }} />
       </main>
     </div>
   );
@@ -48,24 +48,24 @@ export default function StudentAttendancePage() {
   const subjects = dashboard?.subjects || [];
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div className="app-shell">
       <Sidebar />
-      <main style={{ flex: 1, padding: '32px', overflow: 'auto' }}>
-        <div className="animate-fade-up" style={{ marginBottom: 28 }}>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', marginBottom: 6 }}>
+      <main className="app-main">
+        <div className="animate-fade-up" style={{ marginBottom: 20 }}>
+          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(22px, 5vw, 26px)', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: 4 }}>
             Attendance History
           </h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
             Complete record of your class attendance
           </p>
         </div>
 
         {/* Subject filter */}
-        <div className="animate-fade-up stagger-1" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 24 }}>
+        <div className="animate-fade-up stagger-1" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
           <button
             onClick={() => setSelectedSubject('all')}
             className={selectedSubject === 'all' ? 'btn-primary' : 'btn-ghost'}
-            style={{ fontSize: 13, padding: '8px 16px' }}
+            style={{ fontSize: 12, padding: '8px 14px' }}
           >All Subjects</button>
           {subjects.map(s => (
             <button
@@ -73,8 +73,8 @@ export default function StudentAttendancePage() {
               onClick={() => setSelectedSubject(s.subject._id)}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '8px 16px', borderRadius: 10, border: '1px solid',
-                fontSize: 13, fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+                padding: '8px 14px', borderRadius: 10, border: '1px solid',
+                fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
                 background: selectedSubject === s.subject._id ? `${s.subject.color}20` : 'transparent',
                 borderColor: selectedSubject === s.subject._id ? s.subject.color : 'var(--border)',
                 color: selectedSubject === s.subject._id ? s.subject.color : 'var(--text-secondary)'
@@ -91,28 +91,27 @@ export default function StudentAttendancePage() {
           const subj = subjects.find(s => s.subject._id === selectedSubject);
           if (!subj) return null;
           return (
-            <div className="glass-card animate-fade-up stagger-2" style={{
-              padding: 20, marginBottom: 20,
-              display: 'flex', gap: 24, alignItems: 'center'
+            <div className="glass-card animate-fade-up stagger-2 subject-summary-banner" style={{
+              padding: 18, marginBottom: 20
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 10, height: 10, borderRadius: '50%', background: subj.subject.color }} />
-                <span style={{ fontWeight: 700, fontSize: 16 }}>{subj.subject.name}</span>
-                <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>({subj.subject.code})</span>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: subj.subject.color, flexShrink: 0 }} />
+                <span style={{ fontWeight: 700, fontSize: 15 }}>{subj.subject.name}</span>
+                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>({subj.subject.code})</span>
               </div>
-              <div style={{ display: 'flex', gap: 24, marginLeft: 'auto' }}>
+              <div className="subject-summary-metrics" style={{ display: 'flex', gap: 24, marginLeft: 'auto' }}>
                 <div style={{ textAlign: 'center' }}>
-                  <p style={{ fontSize: 22, fontWeight: 800, color: '#10b981', fontFamily: 'var(--font-display)' }}>{subj.attended}</p>
-                  <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>ATTENDED</p>
+                  <p style={{ fontSize: 20, fontWeight: 800, color: '#10b981', fontFamily: 'var(--font-display)' }}>{subj.attended}</p>
+                  <p style={{ fontSize: 10, color: 'var(--text-muted)' }}>ATTENDED</p>
                 </div>
                 <div style={{ textAlign: 'center' }}>
-                  <p style={{ fontSize: 22, fontWeight: 800, color: '#f43f5e', fontFamily: 'var(--font-display)' }}>{subj.absent}</p>
-                  <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>ABSENT</p>
+                  <p style={{ fontSize: 20, fontWeight: 800, color: '#f43f5e', fontFamily: 'var(--font-display)' }}>{subj.absent}</p>
+                  <p style={{ fontSize: 10, color: 'var(--text-muted)' }}>ABSENT</p>
                 </div>
                 <div style={{ textAlign: 'center' }}>
-                  <p style={{ fontSize: 22, fontWeight: 800, fontFamily: 'var(--font-display)',
+                  <p style={{ fontSize: 20, fontWeight: 800, fontFamily: 'var(--font-display)',
                     color: subj.percentage >= 75 ? '#10b981' : '#f43f5e' }}>{subj.percentage}%</p>
-                  <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>RATE</p>
+                  <p style={{ fontSize: 10, color: 'var(--text-muted)' }}>RATE</p>
                 </div>
               </div>
             </div>
@@ -121,7 +120,7 @@ export default function StudentAttendancePage() {
 
         {/* History table */}
         <div className="glass-card animate-fade-up stagger-2">
-          <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700 }}>
                 Attendance Records
@@ -135,20 +134,19 @@ export default function StudentAttendancePage() {
                 <tr>
                   <th>Date</th>
                   <th>Subject</th>
-                  <th>Code</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredHistory.length === 0 ? (
                   <tr>
-                    <td colSpan={4} style={{ textAlign: 'center', padding: '40px 24px', color: 'var(--text-muted)' }}>
+                    <td colSpan={3} style={{ textAlign: 'center', padding: '40px 24px', color: 'var(--text-muted)' }}>
                       No attendance records found
                     </td>
                   </tr>
                 ) : filteredHistory.map((record, i) => (
                   <tr key={i}>
-                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12, whiteSpace: 'nowrap' }}>
                       {new Date(record.date).toLocaleDateString('en-IN', {
                         day: 'numeric', month: 'short', year: 'numeric'
                       })}
@@ -157,13 +155,13 @@ export default function StudentAttendancePage() {
                         {new Date(record.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </td>
-                    <td style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-                      {record.subject?.name}
-                    </td>
                     <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 13 }}>
+                        {record.subject?.name}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
                         <div style={{ width: 6, height: 6, borderRadius: '50%', background: record.subject?.color || '#7c3aed' }} />
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)' }}>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
                           {record.subject?.code}
                         </span>
                       </div>
